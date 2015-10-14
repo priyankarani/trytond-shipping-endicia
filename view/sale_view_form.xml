@@ -5,8 +5,6 @@
             <label name="is_endicia_shipping"/>
             <field name="is_endicia_shipping"/>
             <newline/>
-            <label name="endicia_mailclass"/>
-            <field name="endicia_mailclass" widget="selection"/>
             <label name="endicia_mailpiece_shape"/>
             <field name="endicia_mailpiece_shape"/>
             <newline/>

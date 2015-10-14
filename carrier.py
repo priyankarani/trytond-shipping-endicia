@@ -2,12 +2,12 @@
 # this repository contains the full copyright notices and license terms.
 from decimal import Decimal
 
-from trytond.model import ModelSQL, ModelView, fields
+from trytond.model import fields
 from trytond.pool import PoolMeta, Pool
 from trytond.transaction import Transaction
 from trytond.pyson import Eval
 
-__all__ = ['Carrier', 'EndiciaMailclass', ]
+__all__ = ['Carrier']
 __metaclass__ = PoolMeta
 
 ENDICIA_STATES = {
@@ -87,7 +87,7 @@ class Carrier:
 
         return Decimal('0'), usd.id
 
-    def _get_endicia_mailclass_name(self, mailclass):
+    def _get_service_name(self, service):
         """
         Return endicia service name
 
@@ -95,27 +95,13 @@ class Carrier:
         default display name of service.
         """
         return "%s %s" % (
-            self.carrier_product.code, mailclass.display_name or mailclass.name
+            self.carrier_product.code, service.name
         )
 
-
-class EndiciaMailclass(ModelSQL, ModelView):
-    "Endicia mailclass"
-    __name__ = 'endicia.mailclass'
-
-    active = fields.Boolean('Active', select=True)
-    name = fields.Char('Name', required=True, select=True, readonly=True)
-    value = fields.Char('Value', required=True, select=True, readonly=True)
-    method_type = fields.Selection([
-        ('domestic', 'Domestic'),
-        ('international', 'International'),
-    ], 'Type', required=True, select=True, readonly=True)
-    display_name = fields.Char('Display Name', select=True)
-
-    @staticmethod
-    def default_active():
-        return True
-
-    @staticmethod
-    def check_xml_record(records, values):
-        return True
+    def get_all_services(self):
+        """
+        Return a list of services handled by the carrier
+        Downstream modules should implement this method to return a list of
+        services of the carrier.
+        """
+        return []

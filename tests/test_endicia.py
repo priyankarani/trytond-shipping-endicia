@@ -28,7 +28,7 @@ class BaseTestCase(unittest.TestCase):
         trytond.tests.test_tryton.install_module('shipping_endicia')
         self.Sale = POOL.get('sale.sale')
         self.SaleConfig = POOL.get('sale.configuration')
-        self.EndiciaMailclass = POOL.get('endicia.mailclass')
+        self.CarrierService = POOL.get('carrier.service')
         self.Product = POOL.get('product.product')
         self.Uom = POOL.get('product.uom')
         self.Account = POOL.get('account.account')
@@ -218,15 +218,9 @@ class BaseTestCase(unittest.TestCase):
             'party': self.company.party.id
         }])
 
-        # Sale configuration
-        endicia_mailclass, = self.EndiciaMailclass.search([
-            ('value', '=', 'First')
-        ])
-
         self.SaleConfig.write(self.SaleConfig(1), {
             'endicia_label_subtype': 'Integrated',
             'endicia_integrated_form_type': 'Form2976',
-            'endicia_mailclass': endicia_mailclass.id,
             'endicia_include_postage': True,
         })
 
@@ -309,6 +303,12 @@ class BaseTestCase(unittest.TestCase):
             'endicia_requester_id': '123456',
             'endicia_passphrase': 'PassPhrase',
             'endicia_is_test': True,
+        }])
+
+        self.CarrierService.create([{
+            'code': 'First',
+            'name': 'First',
+            'carrier': self.carrier.id,
         }])
 
         self.sale_party, = self.Party.create([{
@@ -646,20 +646,20 @@ class TestUSPSEndicia(BaseTestCase):
             # Calling method to setup defaults.
             self.setup_defaults()
 
-            endicia_mailclass, = self.EndiciaMailclass.search([
-                ('value', '=', 'First')
+            endicia_service, = self.CarrierService.search([
+                ('code', '=', 'First'),
             ])
 
             # Following lines will test thrice, each
             # with a different `argument` value.
             for argument in [
                     {'name': 'None'},
-                    {'value': 'Value'},
-                    {'method_type': 'international'}
+                    {'code': 'Value'},
+                    {'is_international': True}
             ]:
                 self.assertRaises(
-                    UserError, self.EndiciaMailclass.write,
-                    [endicia_mailclass], argument
+                    UserError, self.CarrierService.write,
+                    [endicia_service], argument
                 )
 
     def test_0030_endicia_shipping_rates(self):
@@ -707,8 +707,8 @@ class TestUSPSEndicia(BaseTestCase):
             # Call method to create sale order
             self.setup_defaults()
 
-            endicia_mailclass, = self.EndiciaMailclass.search([
-                ('value', '=', 'PriorityMailInternational')
+            endicia_service, = self.CarrierService.search([
+                ('code', '=', 'PriorityMailInternational'),
             ])
 
             shipment, = self.StockShipmentOut.search([])
@@ -717,7 +717,7 @@ class TestUSPSEndicia(BaseTestCase):
                 'endicia_mailpiece_shape': 'Flat',
                 'endicia_integrated_form_type': 'Form2976',
                 'endicia_label_subtype': 'Integrated',
-                'endicia_mailclass': endicia_mailclass.id,
+                'service': endicia_service.id,
                 'delivery_address': self.sale_party.addresses[1].id,
             })
 
@@ -752,8 +752,8 @@ class TestUSPSEndicia(BaseTestCase):
             # Call method to create sale order
             self.setup_defaults()
 
-            endicia_mailclass, = self.EndiciaMailclass.search([
-                ('value', '=', 'First')
+            endicia_service, = self.CarrierService.search([
+                ('code', '=', 'First'),
             ])
 
             shipment, = self.StockShipmentOut.search([])
@@ -763,7 +763,7 @@ class TestUSPSEndicia(BaseTestCase):
                 'endicia_package_type': 'Merchandise',
                 'endicia_integrated_form_type': 'Form2976',
                 'endicia_label_subtype': 'None',
-                'endicia_mailclass': endicia_mailclass.id,
+                'service': endicia_service.id,
                 'delivery_address': self.sale_party.addresses[2].id,
             })
 

@@ -59,9 +59,6 @@ class Configuration:
     'Sale Configuration'
     __name__ = 'sale.configuration'
 
-    endicia_mailclass = fields.Many2One(
-        'endicia.mailclass', 'Default MailClass',
-    )
     endicia_label_subtype = fields.Selection([
         ('None', 'None'),
         ('Integrated', 'Integrated')
@@ -105,11 +102,6 @@ class Sale:
     "Sale"
     __name__ = 'sale.sale'
 
-    endicia_mailclass = fields.Many2One(
-        'endicia.mailclass', 'MailClass', states={
-            'readonly': ~Eval('state').in_(['draft', 'quotation']),
-        }, depends=['state']
-    )
     endicia_mailpiece_shape = fields.Selection(
         MAILPIECE_SHAPES, 'Endicia MailPiece Shape', states={
             'readonly': ~Eval('state').in_(['draft', 'quotation']),
@@ -133,18 +125,12 @@ class Sale:
 
         return super(Sale, self)._get_weight_uom()
 
-    @staticmethod
-    def default_endicia_mailclass():
-        Config = Pool().get('sale.configuration')
-        config = Config(1)
-        return config.endicia_mailclass and config.endicia_mailclass.id or None
-
     @classmethod
     def __setup__(cls):
         super(Sale, cls).__setup__()
         cls._error_messages.update({
-            'mailclass_missing':
-                'Select a mailclass to ship using Endicia [USPS].'
+            'service_missing':
+                'Select a carrier service to ship using Endicia [USPS].'
         })
         cls._buttons.update({
             'update_endicia_shipment_cost': {
@@ -183,8 +169,8 @@ class Sale:
         Currency = Pool().get('currency.currency')
 
         if self.carrier and self.carrier.carrier_cost_method == 'endicia':
-            if not self.endicia_mailclass:
-                self.raise_user_error('mailclass_missing')
+            if not self.service:
+                self.raise_user_error('service_missing')
             with Transaction().set_context(self._get_carrier_context()):
                 shipment_cost_usd = self.carrier.get_sale_price()
                 if not shipment_cost_usd[0]:
@@ -197,7 +183,7 @@ class Sale:
             self.add_shipping_line(
                 shipment_cost,
                 '%s - %s' % (
-                    self.carrier.party.name, self.endicia_mailclass.name
+                    self.carrier.party.name, self.service.name
                 )
             )
 
@@ -225,16 +211,16 @@ class Sale:
         if shipment_type == 'out' and shipments and self.carrier and \
                 self.carrier.carrier_cost_method == 'endicia':
             Shipment.write(shipments, {
-                'endicia_mailclass': self.endicia_mailclass.id,
+                'service': self.service.id,
                 'endicia_mailpiece_shape': self.endicia_mailpiece_shape,
                 'is_endicia_shipping': self.is_endicia_shipping,
             })
         return shipments
 
-    def get_endicia_shipping_cost(self, mailclass=None):
+    def get_endicia_shipping_cost(self, service=None):
         """Returns the calculated shipping cost as sent by endicia
 
-        :param mailclass: endicia mailclass for which cost to be fetched
+        :param service: endicia service for which cost to be fetched
 
         :returns: The shipping cost in USD
         """
@@ -242,8 +228,8 @@ class Sale:
 
         carrier, = Carrier.search(['carrier_cost_method', '=', 'endicia'])
 
-        if not mailclass and not self.endicia_mailclass:
-            self.raise_user_error('mailclass_missing')
+        if not service and not self.service:
+            self.raise_user_error('service_missing')
 
         from_address = self._get_ship_from_address()
         to_address = self.shipment_address
@@ -259,7 +245,7 @@ class Sale:
         # Endicia only support 1 decimal place in weight
         weight_oz = "%.1f" % self.package_weight
         calculate_postage_request = CalculatingPostageAPI(
-            mailclass=mailclass or self.endicia_mailclass.value,
+            mailclass=service or self.service.code,
             weightoz=weight_oz,
             from_postal_code=from_address.zip and from_address.zip[:5],
             to_postal_code=to_zip,
@@ -295,29 +281,19 @@ class Sale:
             objectify_response(response).PostagePrice
         )
 
-    def _get_endicia_mail_classes(self):
+    def _make_endicia_rate_line(self, carrier, service, shipment_rate):
         """
-        Returns list of endicia mailclass instances eligible for this sale
-
-        Downstream module can decide the eligibility of mail classes for sale
-        """
-        Mailclass = Pool().get('endicia.mailclass')
-
-        return Mailclass.search([])
-
-    def _make_endicia_rate_line(self, carrier, mailclass, shipment_rate):
-        """
-        Build a rate tuple from shipment_rate and mailclass
+        Build a rate tuple from shipment_rate and service
         """
         Currency = Pool().get('currency.currency')
 
         usd, = Currency.search([('code', '=', 'USD')])
         write_vals = {
             'carrier': carrier.id,
-            'endicia_mailclass': mailclass.id,
+            'service': service.id,
         }
         return (
-            carrier._get_endicia_mailclass_name(mailclass),
+            carrier._get_service_name(service),
             shipment_rate,
             usd,
             {},
@@ -381,19 +357,19 @@ class Sale:
         logger.debug(str(response_xml))
         logger.debug('--------END RESPONSE--------')
 
-        allowed_mailclasses = {
-            mailclass.value: mailclass
-            for mailclass in self._get_endicia_mail_classes()
+        allowed_services = {
+            service.code: service
+            for service in self.carrier.get_all_services()
         }
 
         rate_lines = []
         for postage_price in response.PostagePrice:
-            mailclass = allowed_mailclasses.get(postage_price.MailClass)
-            if not mailclass:
+            service = allowed_services.get(postage_price.MailClass)
+            if not service:
                 continue
             cost = self.fetch_endicia_postage_rate(postage_price)
             rate_lines.append(
-                self._make_endicia_rate_line(carrier, mailclass, cost)
+                self._make_endicia_rate_line(carrier, service, cost)
             )
         return filter(None, rate_lines)
 

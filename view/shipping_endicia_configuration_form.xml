@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <form string="Endicia Configuration">
-    <label name="endicia_mailclass"/>
-    <field name="endicia_mailclass" widget="selection"/>
+    <label name="service"/>
+    <field name="service" widget="selection"/>
     <label name="endicia_mailpiece_shape"/>
     <field name="endicia_mailpiece_shape"/>
     <label name="endicia_label_subtype"/>

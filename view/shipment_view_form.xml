@@ -4,8 +4,6 @@
         <page string="USPS [Endicia]" states="{'invisible': Not(Bool(Eval('is_endicia_shipping')))}" id="endicia">
             <label name="is_endicia_shipping"/>
             <field name="is_endicia_shipping"/>
-            <label name="endicia_mailclass"/>
-            <field name="endicia_mailclass" widget="selection"/>
             <label name="endicia_mailpiece_shape"/>
             <field name="endicia_mailpiece_shape"/>
             <label name="endicia_label_subtype"/>

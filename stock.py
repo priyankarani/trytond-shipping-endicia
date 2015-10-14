@@ -47,9 +47,6 @@ class ShipmentOut:
     "Shipment Out"
     __name__ = 'stock.shipment.out'
 
-    endicia_mailclass = fields.Many2One(
-        'endicia.mailclass', 'MailClass', states=STATES, depends=['state']
-    )
     endicia_mailpiece_shape = fields.Selection(
         MAILPIECE_SHAPES, 'Endicia MailPiece Shape', states=STATES,
         depends=['state']
@@ -92,12 +89,6 @@ class ShipmentOut:
         return super(ShipmentOut, self)._get_weight_uom()
 
     @staticmethod
-    def default_endicia_mailclass():
-        Config = Pool().get('sale.configuration')
-        config = Config(1)
-        return config.endicia_mailclass and config.endicia_mailclass.id or None
-
-    @staticmethod
     def default_endicia_label_subtype():
         Config = Pool().get('sale.configuration')
         config = Config(1)
@@ -128,8 +119,8 @@ class ShipmentOut:
         # shipment carrier at any state except `done`.
         cls.carrier.states = STATES
         cls._error_messages.update({
-            'mailclass_missing':
-                'Select a mailclass to ship using Endicia [USPS].',
+            'service_missing':
+                'Select a carrier service to ship using Endicia [USPS].',
             'error_label': 'Error in generating label "%s"',
             'tracking_number_already_present':
                 'Tracking Number is already present for this shipment.',
@@ -256,14 +247,14 @@ class ShipmentOut:
         if self.tracking_number:
             self.raise_user_error('tracking_number_already_present')
 
-        if not self.endicia_mailclass:
-            self.raise_user_error('mailclass_missing')
+        if not self.service:
+            self.raise_user_error('service_missing')
 
-        mailclass = self.endicia_mailclass.value
+        service = self.service.code
         label_request = LabelRequest(
             Test=self.carrier.endicia_is_test and 'YES' or 'NO',
             LabelType=(
-                'International' in mailclass
+                'International' in service
             ) and 'International' or 'Default',
             # TODO: Probably the following have to be configurable
             ImageFormat="PNG",
@@ -279,7 +270,7 @@ class ShipmentOut:
             weight_oz=weight_oz,
             partner_customer_id=self.delivery_address.id,
             partner_transaction_id=self.id,
-            mail_class=mailclass,
+            mail_class=service,
             accountid=self.carrier.endicia_account_id,
             requesterid=self.carrier.endicia_requester_id,
             passphrase=self.carrier.endicia_passphrase,
@@ -358,8 +349,8 @@ class ShipmentOut:
 
         carrier, = Carrier.search(['carrier_cost_method', '=', 'endicia'])
 
-        if not self.endicia_mailclass:
-            self.raise_user_error('mailclass_missing')
+        if not self.service:
+            self.raise_user_error('service_missing')
 
         from_address = self._get_ship_from_address()
         to_address = self.delivery_address
@@ -375,7 +366,7 @@ class ShipmentOut:
         # Endicia only support 1 decimal place in weight
         weight_oz = "%.1f" % self.weight
         calculate_postage_request = CalculatingPostageAPI(
-            mailclass=self.endicia_mailclass.value,
+            mailclass=self.service.code,
             weightoz=weight_oz,
             from_postal_code=from_address.zip and from_address.zip[:5],
             to_postal_code=to_zip,
@@ -569,8 +560,10 @@ class ShippingEndicia(ModelView):
     'Endicia Configuration'
     __name__ = 'shipping.label.endicia'
 
-    endicia_mailclass = fields.Many2One(
-        'endicia.mailclass', 'MailClass', required=True
+    service = fields.Many2One(
+        'carrier.service', 'Service', required=True,
+        domain=[('carrier', '=', Eval('carrier'))],
+        depends=['carrier']
     )
     endicia_mailpiece_shape = fields.Selection(
         MAILPIECE_SHAPES, 'Endicia MailPiece Shape'
@@ -589,6 +582,9 @@ class ShippingEndicia(ModelView):
         ENDICIA_PACKAGE_TYPES, 'Package Content Type'
     )
     endicia_refunded = fields.Boolean('Refunded ?', readonly=True)
+    carrier = fields.Many2One(
+        "carrier", "Carrier", required=True
+    )
 
 
 class GenerateShippingLabel(Wizard):
@@ -610,11 +606,9 @@ class GenerateShippingLabel(Wizard):
         shipment = self.start.shipment
 
         return {
-            'endicia_mailclass': (
-                shipment.endicia_mailclass and shipment.endicia_mailclass.id
-            ) or (
-                config.endicia_mailclass and config.endicia_mailclass.id
-            ) or None,
+            'service': (
+                shipment.service and shipment.service.id or None
+            ),
             'endicia_mailpiece_shape': (
                 shipment.endicia_mailpiece_shape or
                 config.endicia_mailpiece_shape
@@ -632,7 +626,8 @@ class GenerateShippingLabel(Wizard):
             ),
             'endicia_package_type': (
                 shipment.endicia_package_type or config.endicia_package_type
-            )
+            ),
+            'carrier': self.start.carrier,
         }
 
     def transition_next(self):
@@ -646,7 +641,7 @@ class GenerateShippingLabel(Wizard):
         shipment = self.start.shipment
 
         if self.start.carrier.carrier_cost_method == 'endicia':
-            shipment.endicia_mailclass = self.endicia_config.endicia_mailclass
+            #shipment.service = self.endicia_config.service
             shipment.endicia_mailpiece_shape = \
                 self.endicia_config.endicia_mailpiece_shape
             shipment.endicia_label_subtype = \
